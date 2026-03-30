@@ -1,20 +1,24 @@
-// src/lib/agent/audit.ts
-import { db } from '@/lib/db'
+import { prisma } from '@/lib/db'
 
 export async function createAuditLog(params: {
   businessId: string
-  actor: string
   action: string
-  details: Record<string, unknown>
-  auth0LogId?: string
+  description: string
+  entityId?: string
+  staffId?: string
+  performedBy?: string
+  metadata?: Record<string, unknown>
 }) {
-  return db.auditLog.create({
+  return prisma.auditLog.create({
     data: {
       businessId: params.businessId,
-      actor: params.actor,
+      staffId: params.staffId || null,
       action: params.action,
-      details: JSON.stringify(params.details),
-      auth0LogId: params.auth0LogId,
+      entity: 'Transaction',
+      entityId: params.entityId,
+      description: params.description,
+      metadata: JSON.stringify(params.metadata || {}),
+      performedBy: params.performedBy || 'elf',
     },
   })
 }
