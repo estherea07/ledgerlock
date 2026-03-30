@@ -1,0 +1,44 @@
+{
+  "name": "ledgerlock",
+  "version": "1.0.0",
+  "description": "AI-powered guardrails for your business finances — your money moves only when you say so.",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "npx ts-node prisma/seed.ts"
+  },
+  "dependencies": {
+    "@auth0/nextjs-auth0": "^3.5.0",
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@langchain/anthropic": "^0.2.0",
+    "@langchain/core": "^0.2.0",
+    "@langchain/langgraph": "^0.1.0",
+    "@prisma/client": "^5.14.0",
+    "axios": "^1.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.383.0",
+    "next": "14.2.3",
+    "react": "^18",
+    "react-dom": "^18",
+    "tailwind-merge": "^2.3.0",
+    "twilio": "^5.2.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/uuid": "^10.0.0",
+    "autoprefixer": "^10.0.1",
+    "postcss": "^8",
+    "prisma": "^5.14.0",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
