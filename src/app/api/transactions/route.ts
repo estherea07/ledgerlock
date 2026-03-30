@@ -38,7 +38,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'amount, description and type are required' }, { status: 400 })
   }
 
-  // Create pending transaction first so UI gets a response fast
   const transaction = await prisma.transaction.create({
     data: {
       businessId: business.id,
@@ -52,8 +51,19 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Run Elf analysis with a 25s timeout so it never hangs forever
-  let elfResult = { decision: 'pending', riskScore: 0, riskReasons: [], cibaRequired: false, cibaRequestId: null }
+  let elfResult: {
+    decision: string
+    riskScore: number
+    riskReasons: string[]
+    cibaRequired: boolean
+    cibaRequestId: string | null
+  } = {
+    decision: 'pending',
+    riskScore: 0,
+    riskReasons: [] as string[],
+    cibaRequired: false,
+    cibaRequestId: null,
+  }
 
   try {
     const analysisPromise = runElfAnalysis({
@@ -70,26 +80,21 @@ export async function POST(req: NextRequest) {
       setTimeout(() => reject(new Error('Elf analysis timeout')), 25000)
     )
 
-    elfResult = await Promise.race([analysisPromise, timeoutPromise]) as typeof elfResult
+    elfResult = (await Promise.race([analysisPromise, timeoutPromise])) as typeof elfResult
   } catch (err: any) {
     console.error('Elf analysis error:', err.message)
-    // Fall back to rule-based decision if AI times out
     const riskScore = parseFloat(amount) > 50000 ? 40 : 5
     const decision = riskScore >= 35 ? 'flagged' : 'approved'
-    elfResult = {
-      decision,
-      riskScore,
-      riskReasons: riskScore >= 35 ? ['Amount exceeds safe threshold — flagged for review'] : [],
-      cibaRequired: riskScore >= 35,
-      cibaRequestId: null,
-    }
-    // Update transaction with fallback decision
+    const riskReasons: string[] = riskScore >= 35
+      ? ['Amount exceeds safe threshold — flagged for review']
+      : []
+    elfResult = { decision, riskScore, riskReasons, cibaRequired: riskScore >= 35, cibaRequestId: null }
     await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
         status: decision,
         riskLevel: riskScore >= 35 ? 'high' : 'low',
-        riskReasons: JSON.stringify(elfResult.riskReasons),
+        riskReasons: JSON.stringify(riskReasons),
         cibaRequired: elfResult.cibaRequired,
       },
     })
