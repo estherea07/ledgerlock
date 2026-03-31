@@ -1,8 +1,7 @@
 /**
  * ELF AGENT - LedgerLock's AI Guardian
- * Built with LangGraph for stateful, multi-step transaction analysis
- * Uses Auth0 Token Vault for all credential-sensitive operations
- * Powered by Anthropic Claude (claude-haiku-3-5 - fastest & cheapest)
+ * LangGraph stateful agent with Auth0 Token Vault + CIBA
+ * Powered by Anthropic Claude Haiku
  */
 
 import { StateGraph, Annotation, END } from '@langchain/langgraph'
@@ -11,8 +10,6 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import { prisma } from '../db'
 import { initiateCIBA } from '../auth'
 import { sendAlert } from '../notifications'
-
-// ─── State Definition ────────────────────────────────────────────────────────
 
 const ElfState = Annotation.Root({
   transactionId: Annotation<string>(),
@@ -24,15 +21,31 @@ const ElfState = Annotation.Root({
   type: Annotation<string>(),
   policies: Annotation<any[]>(),
   staffHistory: Annotation<any>(),
-  riskScore: Annotation<number>({ default: () => 0 }),
-  riskReasons: Annotation<string[]>({ default: () => [] }),
-  decision: Annotation<string | null>({ default: () => null }),
-  cibaRequired: Annotation<boolean>({ default: () => false }),
-  cibaRequestId: Annotation<string | null>({ default: () => null }),
-  auditNotes: Annotation<string>({ default: () => '' }),
+  riskScore: Annotation<number>({
+    reducer: (x: number, y: number) => y ?? x,
+    default: () => 0,
+  }),
+  riskReasons: Annotation<string[]>({
+    reducer: (x: string[], y: string[]) => x.concat(y),
+    default: () => [],
+  }),
+  decision: Annotation<string | null>({
+    reducer: (x: string | null, y: string | null) => y ?? x,
+    default: () => null,
+  }),
+  cibaRequired: Annotation<boolean>({
+    reducer: (x: boolean, y: boolean) => y ?? x,
+    default: () => false,
+  }),
+  cibaRequestId: Annotation<string | null>({
+    reducer: (x: string | null, y: string | null) => y ?? x,
+    default: () => null,
+  }),
+  auditNotes: Annotation<string>({
+    reducer: (x: string, y: string) => y ?? x,
+    default: () => '',
+  }),
 })
-
-// ─── LLM: Anthropic Claude Haiku (fastest, cheapest, free tier available) ───
 
 const llm = new ChatAnthropic({
   modelName: 'claude-haiku-4-5-20251001',
@@ -40,13 +53,10 @@ const llm = new ChatAnthropic({
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-// ─── Node: Load Policies ─────────────────────────────────────────────────────
-
 async function loadPolicies(state: typeof ElfState.State) {
   const policies = await prisma.policy.findMany({
     where: { businessId: state.businessId, isActive: true },
   })
-
   const staffHistory = state.staffId
     ? await prisma.transaction.findMany({
         where: { staffId: state.staffId },
@@ -54,11 +64,8 @@ async function loadPolicies(state: typeof ElfState.State) {
         take: 20,
       })
     : []
-
   return { policies, staffHistory }
 }
-
-// ─── Node: Run Policy Check ──────────────────────────────────────────────────
 
 async function runPolicyCheck(state: typeof ElfState.State) {
   const riskReasons: string[] = []
@@ -70,16 +77,16 @@ async function runPolicyCheck(state: typeof ElfState.State) {
     if (policy.type === 'spending_limit') {
       if (state.amount > value.daily) {
         riskScore += 30
-        riskReasons.push(`Amount ₦${state.amount.toLocaleString()} exceeds daily limit ₦${value.daily.toLocaleString()}`)
+        riskReasons.push(`Amount exceeds daily limit of ₦${value.daily.toLocaleString()}`)
       } else if (state.amount > value.perTransaction) {
         riskScore += 15
-        riskReasons.push(`Amount ₦${state.amount.toLocaleString()} exceeds per-transaction limit ₦${value.perTransaction.toLocaleString()}`)
+        riskReasons.push(`Amount exceeds per-transaction limit of ₦${value.perTransaction.toLocaleString()}`)
       }
     }
 
     if (policy.type === 'vendor_whitelist' && state.vendor) {
       const whitelist: string[] = value.vendors || []
-      const isWhitelisted = whitelist.some(v =>
+      const isWhitelisted = whitelist.some((v: string) =>
         state.vendor!.toLowerCase().includes(v.toLowerCase())
       )
       if (!isWhitelisted) {
@@ -92,93 +99,70 @@ async function runPolicyCheck(state: typeof ElfState.State) {
       const hour = new Date().getHours()
       if (hour < value.startHour || hour > value.endHour) {
         riskScore += 20
-        riskReasons.push(`Transaction attempted outside allowed hours (${value.startHour}:00–${value.endHour}:00)`)
+        riskReasons.push(`Transaction outside allowed hours (${value.startHour}:00–${value.endHour}:00)`)
       }
     }
   }
 
-  // Check staff flag history
   if (state.staffHistory.length > 0) {
     const recentFlags = state.staffHistory.filter(
       (t: any) => t.status === 'blocked' || t.status === 'flagged'
     ).length
-
     if (recentFlags >= 3) {
       riskScore += 30
-      riskReasons.push(`Staff member has ${recentFlags} previous flags — high repeat risk`)
+      riskReasons.push(`Staff member has ${recentFlags} previous flags`)
     } else if (recentFlags >= 1) {
       riskScore += 15
       riskReasons.push(`Staff member has ${recentFlags} previous flag${recentFlags > 1 ? 's' : ''}`)
     }
   }
 
-  // Personal account keyword detection
   const desc = (state.description + ' ' + (state.vendor || '')).toLowerCase()
-  const personalKeywords = ['personal', 'my account', 'private account', 'individual account']
-  if (personalKeywords.some(k => desc.includes(k))) {
+  if (['personal', 'my account', 'private account'].some(k => desc.includes(k))) {
     riskScore += 40
-    riskReasons.push('Transaction description suggests personal account destination — blocked by policy')
+    riskReasons.push('Transaction description suggests personal account destination')
   }
 
   return { riskScore, riskReasons }
 }
 
-// ─── Node: AI Anomaly Detection (Claude Haiku) ───────────────────────────────
-
 async function runAnomalyDetection(state: typeof ElfState.State) {
   const historyText = state.staffHistory
     .slice(0, 5)
     .map((t: any) => `${t.type} ₦${t.amount} - ${t.description} [${t.status}]`)
-    .join('\n') || 'No history yet'
+    .join('\n') || 'No history'
 
-  const prompt = `You are Elf, an AI fraud detection agent for LedgerLock, protecting SME finances in Nigeria.
+  const prompt = `You are Elf, an AI fraud detection agent for LedgerLock protecting SME finances.
 
-Analyse this transaction for fraud risk signals:
+Transaction:
 - Type: ${state.type}
 - Amount: ₦${state.amount.toLocaleString()}
 - Vendor/Description: ${state.vendor || state.description}
-- Current risk score from policy check: ${state.riskScore}/100
-- Current risk reasons: ${state.riskReasons.join('; ') || 'None yet'}
+- Current risk score: ${state.riskScore}/100
+- Current signals: ${state.riskReasons.join('; ') || 'None'}
 
-Staff recent transactions:
+Staff recent history:
 ${historyText}
 
-Common fraud patterns to detect:
-1. Round amounts to personal accounts (e.g. ₦50,000 exactly with vague description)
-2. Vendor name mismatch (paid to "John Doe" instead of company name)
-3. Unusual timing or frequency
-4. Amount just below approval thresholds
-5. Repeat small transactions that sum to large amounts
-
 Respond ONLY with valid JSON, no other text:
-{
-  "additionalRiskScore": <number 0-40>,
-  "additionalReasons": ["reason1", "reason2"],
-  "anomalyDetected": <boolean>
-}`
+{"additionalRiskScore": <0-40>, "additionalReasons": ["reason"], "anomalyDetected": <boolean>}`
 
   try {
     const response = await llm.invoke([
-      new SystemMessage('You are Elf, a financial fraud detection AI for African SMEs. Respond ONLY with valid JSON.'),
+      new SystemMessage('You are Elf, a financial fraud detection AI. Respond ONLY with valid JSON.'),
       new HumanMessage(prompt),
     ])
-
     const content = response.content as string
     const clean = content.replace(/```json|```/g, '').trim()
     const result = JSON.parse(clean)
-
     return {
       riskScore: Math.min(100, state.riskScore + (result.additionalRiskScore || 0)),
-      riskReasons: [...state.riskReasons, ...(result.additionalReasons || [])],
+      riskReasons: (result.additionalReasons || []) as string[],
     }
-  } catch (err) {
-    // If AI call fails, proceed with policy-based score only
-    console.error('Elf AI analysis error:', err)
+  } catch {
     return {}
   }
 }
-
-// ─── Node: Make Decision ──────────────────────────────────────────────────────
 
 async function makeDecision(state: typeof ElfState.State) {
   let decision: string
@@ -187,46 +171,32 @@ async function makeDecision(state: typeof ElfState.State) {
 
   if (state.riskScore >= 70) {
     decision = 'blocked'
-    auditNotes = `Elf auto-blocked transaction. Risk score: ${state.riskScore}/100. Signals: ${state.riskReasons.join('; ')}`
+    auditNotes = `Elf blocked. Risk: ${state.riskScore}/100. Signals: ${state.riskReasons.join('; ')}`
   } else if (state.riskScore >= 35) {
     decision = 'flagged'
     cibaRequired = true
-    auditNotes = `Elf flagged for owner review via Auth0 CIBA. Risk score: ${state.riskScore}/100`
+    auditNotes = `Elf flagged for CIBA. Risk: ${state.riskScore}/100`
   } else {
     decision = 'approved'
-    auditNotes = `Elf auto-approved. Risk score: ${state.riskScore}/100. All policies passed.`
+    auditNotes = `Elf approved. Risk: ${state.riskScore}/100`
   }
 
   return { decision, cibaRequired, auditNotes }
 }
 
-// ─── Node: Initiate CIBA ──────────────────────────────────────────────────────
-
 async function triggerCIBA(state: typeof ElfState.State) {
   if (!state.cibaRequired) return {}
-
   try {
-    const business = await prisma.business.findUnique({
-      where: { id: state.businessId },
-    })
+    const business = await prisma.business.findUnique({ where: { id: state.businessId } })
     if (!business?.ownerId) return {}
-
     const bindingMessage = `Elf: Approve ₦${state.amount.toLocaleString()} to ${state.vendor || state.description}? Risk: ${state.riskScore}/100`
-
-    const cibaResult = await initiateCIBA(
-      business.ownerId,
-      bindingMessage,
-      'openid'
-    )
-
+    const cibaResult = await initiateCIBA(business.ownerId, bindingMessage, 'openid')
     return { cibaRequestId: cibaResult.auth_req_id }
   } catch (err) {
-    console.error('CIBA initiation failed:', err)
+    console.error('CIBA failed:', err)
     return {}
   }
 }
-
-// ─── Node: Persist & Notify ───────────────────────────────────────────────────
 
 async function persistAndNotify(state: typeof ElfState.State) {
   const riskLevel =
@@ -249,10 +219,12 @@ async function persistAndNotify(state: typeof ElfState.State) {
   if (state.staffId && (state.decision === 'flagged' || state.decision === 'blocked')) {
     const staff = await prisma.staffMember.findUnique({ where: { id: state.staffId } })
     if (staff) {
-      const newScore = Math.min(100, staff.riskScore + Math.floor(state.riskScore * 0.25))
       await prisma.staffMember.update({
         where: { id: state.staffId },
-        data: { riskScore: newScore, flagCount: { increment: 1 } },
+        data: {
+          riskScore: Math.min(100, staff.riskScore + Math.floor(state.riskScore * 0.25)),
+          flagCount: { increment: 1 },
+        },
       })
     }
   }
@@ -274,20 +246,16 @@ async function persistAndNotify(state: typeof ElfState.State) {
     await sendAlert({
       businessId: state.businessId,
       type: state.decision,
-      message: `Elf ${state.decision} a ₦${state.amount.toLocaleString()} transaction. Risk: ${state.riskScore}/100`,
+      message: `Elf ${state.decision} ₦${state.amount.toLocaleString()} transaction. Risk: ${state.riskScore}/100`,
     })
   }
 
   return {}
 }
 
-// ─── Routing ──────────────────────────────────────────────────────────────────
-
 function routeAfterDecision(state: typeof ElfState.State) {
   return state.cibaRequired ? 'trigger_ciba' : 'persist_and_notify'
 }
-
-// ─── Build LangGraph ──────────────────────────────────────────────────────────
 
 const graph = new StateGraph(ElfState)
   .addNode('load_policies', loadPolicies)
@@ -306,8 +274,6 @@ const graph = new StateGraph(ElfState)
 
 export const elfAgent = graph.compile()
 
-// ─── Public Interface ─────────────────────────────────────────────────────────
-
 export async function runElfAnalysis(input: {
   transactionId: string
   businessId: string
@@ -315,7 +281,7 @@ export async function runElfAnalysis(input: {
   amount: number
   vendor: string | null
   description: string
-  type: 'incoming' | 'outgoing'
+  type: string
 }) {
   const result = await elfAgent.invoke({
     ...input,
@@ -330,10 +296,10 @@ export async function runElfAnalysis(input: {
   })
 
   return {
-    decision: result.decision,
-    riskScore: result.riskScore,
-    riskReasons: result.riskReasons,
-    cibaRequired: result.cibaRequired,
-    cibaRequestId: result.cibaRequestId,
+    decision: result.decision as string,
+    riskScore: result.riskScore as number,
+    riskReasons: result.riskReasons as string[],
+    cibaRequired: result.cibaRequired as boolean,
+    cibaRequestId: result.cibaRequestId as string | null,
   }
 }
