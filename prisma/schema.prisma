@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = env("DATABASE_PROVIDER")
   url      = env("DATABASE_URL")
 }
 
@@ -52,38 +52,38 @@ model PaymentLink {
   service      String
   reference    String    @unique
   url          String
-  status       String    @default("pending") // pending | paid | expired | flagged
+  status       String    @default("pending")
   expiresAt    DateTime
   paidAt       DateTime?
   depositFound Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  business    Business    @relation(fields: [businessId], references: [id])
-  staff       StaffMember @relation(fields: [staffId], references: [id])
+  business    Business     @relation(fields: [businessId], references: [id])
+  staff       StaffMember  @relation(fields: [staffId], references: [id])
   transaction Transaction?
 }
 
 model Transaction {
-  id           String    @id @default(cuid())
-  businessId   String
-  staffId      String?
-  paymentLinkId String?  @unique
-  type         String    // incoming | outgoing
-  amount       Float
-  currency     String    @default("NGN")
-  vendor       String?
-  description  String
-  status       String    @default("pending") // pending | approved | denied | blocked | flagged
-  riskLevel    String    @default("low")     // low | medium | high | critical
-  riskReasons  String    @default("[]")      // JSON array
-  cibaRequired Boolean   @default(false)
-  cibaStatus   String?   // pending | approved | denied
+  id            String    @id @default(cuid())
+  businessId    String
+  staffId       String?
+  paymentLinkId String?   @unique
+  type          String
+  amount        Float
+  currency      String    @default("NGN")
+  vendor        String?
+  description   String
+  status        String    @default("pending")
+  riskLevel     String    @default("low")
+  riskReasons   String    @default("[]")
+  cibaRequired  Boolean   @default(false)
+  cibaStatus    String?
   cibaRequestId String?
-  approvedBy   String?
-  blockedBy    String    @default("elf")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  approvedBy    String?
+  blockedBy     String    @default("elf")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   business    Business     @relation(fields: [businessId], references: [id])
   staff       StaffMember? @relation(fields: [staffId], references: [id])
@@ -91,13 +91,13 @@ model Transaction {
 }
 
 model Policy {
-  id          String   @id @default(cuid())
-  businessId  String
-  name        String
-  type        String   // spending_limit | vendor_whitelist | payroll | time_restriction
-  value       String   // JSON encoded value
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  type       String
+  value      String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
 
   business Business @relation(fields: [businessId], references: [id])
 }
@@ -105,10 +105,10 @@ model Policy {
 model VaultToken {
   id          String   @id @default(cuid())
   businessId  String
-  provider    String   // gtbank | paystack | quickbooks | twilio
+  provider    String
   displayName String
-  scopes      String   // JSON array of allowed scopes
-  tokenRef    String   // Reference ID in Auth0 Token Vault (not the actual token)
+  scopes      String
+  tokenRef    String
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
