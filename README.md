@@ -205,32 +205,74 @@ Bank API / Paystack / Twilio
 src/
 ├── app/
 │   ├── api/
-│   │   ├── auth/[auth0]/     # Auth0 handler — login, callback, logout
-│   │   ├── transactions/     # Submit transactions to Elf + CIBA actions
-│   │   ├── links/            # Generate verified payment links
-│   │   ├── staff/            # Staff management + suspend
-│   │   ├── vault/            # Token Vault connections
-│   │   ├── dashboard/        # Aggregated metrics
-│   │   ├── audit/            # Audit log
-│   │   └── webhook/paystack/ # Paystack payment webhooks
-│   ├── dashboard/            # Owner dashboard
-│   ├── payments/             # Transaction list + CIBA approval UI
-│   ├── links/                # Payment link management
-│   ├── staff/                # Staff risk monitoring
-│   ├── vault/                # Token Vault UI
-│   ├── audit/                # Full audit log
-│   ├── onboarding/           # First-time business setup
-│   └── pay/[reference]/      # Public payment page (customer-facing)
-├── components/               # UI components (dashboard, payments, staff, vault)
+│   │   ├── agent/route.ts            # Direct Elf agent endpoint
+│   │   ├── audit/route.ts            # Audit log API
+│   │   ├── auth/[auth0]/route.ts     # Auth0 handler — login, callback, logout
+│   │   ├── dashboard/route.ts        # Aggregated metrics
+│   │   ├── links/route.ts            # Generate verified payment links
+│   │   ├── onboarding/route.ts       # First-time business setup
+│   │   ├── payments/route.ts         # Payments list
+│   │   ├── payments/ciba/route.ts    # CIBA approve/deny for payments
+│   │   ├── staff/route.ts            # Staff management
+│   │   ├── staff/suspend/route.ts    # Suspend a staff member
+│   │   ├── transactions/route.ts     # Submit transactions to Elf
+│   │   ├── transactions/ciba/route.ts # CIBA approve/deny for transactions
+│   │   ├── vault/route.ts            # Token Vault connections
+│   │   └── webhook/paystack/route.ts # Paystack payment webhooks
+│   ├── audit/page.tsx                # Full audit log
+│   ├── dashboard/page.tsx            # Owner dashboard
+│   ├── links/page.tsx                # Payment link management
+│   ├── onboarding/page.tsx           # First-time business setup
+│   ├── pay/[reference]/page.tsx      # Public payment page (customer-facing)
+│   ├── payments/page.tsx             # Transaction list + CIBA approval UI
+│   ├── staff/page.tsx                # Staff risk monitoring
+│   ├── vault/page.tsx                # Token Vault UI
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx                      # Landing page
+├── components/
+│   ├── dashboard/
+│   │   ├── AlertsPanel.tsx
+│   │   ├── ElfInsight.tsx
+│   │   ├── MetricsRow.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── StaffRisk.tsx
+│   │   └── TransactionList.tsx
+│   ├── links/
+│   │   └── GenerateLinkModal.tsx
+│   ├── payments/
+│   │   ├── CIBACard.tsx
+│   │   └── NewTransactionModal.tsx
+│   ├── staff/
+│   │   └── AddStaffModal.tsx
+│   └── ui/
+│       ├── Badge.tsx
+│       ├── Button.tsx
+│       ├── Card.tsx
+│       ├── EmptyState.tsx
+│       ├── Input.tsx
+│       ├── LoadingSpinner.tsx
+│       ├── Modal.tsx
+│       └── Select.tsx
+├── hooks/
+│   ├── useDashboard.ts
+│   ├── usePaymentLinks.ts
+│   ├── useStaff.ts
+│   └── useTransactions.ts
 ├── lib/
-│   ├── agent/elf.ts          # Elf LangGraph agent (core AI)
-│   ├── auth.ts               # Auth0 Token Vault + CIBA helpers
-│   ├── db.ts                 # Prisma client
-│   ├── paystack.ts           # Paystack via Token Vault
-│   └── notifications.ts      # Twilio via Token Vault
-├── hooks/                    # React data-fetching hooks
-├── types/                    # TypeScript interfaces
-└── middleware.ts             # Auth0 route protection
+│   ├── agent/
+│   │   ├── audit.ts                  # Audit log helper
+│   │   ├── elf.ts                    # Elf LangGraph agent (core AI)
+│   │   └── payment-links.ts          # Payment link generation helper
+│   ├── auth/
+│   │   └── auth0.ts                  # Auth0 helpers (legacy)
+│   ├── auth.ts                       # Auth0 Token Vault + CIBA helpers
+│   ├── db.ts                         # Prisma client
+│   ├── notifications.ts              # Twilio via Token Vault
+│   └── paystack.ts                   # Paystack via Token Vault
+├── types/
+│   └── index.ts                      # TypeScript interfaces
+└── middleware.ts                      # Auth0 route protection
 ```
 
 ---
