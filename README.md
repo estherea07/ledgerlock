@@ -2,9 +2,10 @@
 
 **AI-powered guardrails for your business finances. Your money moves only when you say so.**
 
-> Built for the [Auth0 "Authorized to Act" Hackathon](https://devpost.com/bukolajimoh/ledgerlock) 
+> Built for the [Auth0 "Authorized to Act" Hackathon](https://devpost.com/estheradeoti07/ledgerlock) 
 
 **Live Demo:** https://ledgerlock-git-main-estherea07s-projects.vercel.app
+**Youtube Demo Video:** [Demo Video](https://youtu.be/EyBkxuteXOc)
 **GitHub:** https://github.com/estherea07/ledgerlock
 
 ---
